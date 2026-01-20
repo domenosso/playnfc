@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NFC Tag System</title>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <style>
+        body { margin: 0; background: #0a0a0a; color: #fff; font-family: 'Montserrat', sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; text-align: center; }
+        
+        .admin-btn { position: absolute; top: 20px; left: 20px; background: #1a1a1a; border: 1px solid #333; color: #888; padding: 10px 15px; border-radius: 12px; cursor: pointer; font-size: 12px; transition: 0.3s; }
+        .admin-btn:hover { color: #fff; border-color: #ff4b2b; }
+
+        #playBtn { width: 220px; height: 220px; border-radius: 50%; border: none; background: linear-gradient(135deg, #ff4b2b 0%, #ff416c 100%); color: white; font-size: 24px; font-weight: 700; cursor: pointer; box-shadow: 0 15px 35px rgba(255, 75, 43, 0.3); transition: 0.2s; margin-bottom: 20px; }
+        #playBtn:active { transform: scale(0.95); box-shadow: 0 5px 15px rgba(255, 75, 43, 0.2); }
+
+        #status { font-size: 14px; color: #555; max-width: 80%; }
+        b { color: #ff4b2b; }
+
+        /* Modal */
+        #modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #111; padding: 25px; border-radius: 20px; border: 1px solid #222; width: 280px; box-shadow: 0 0 100px rgba(0,0,0,0.5); z-index: 100; }
+        input { width: 100%; padding: 12px; box-sizing: border-box; background: #000; border: 1px solid #333; color: #fff; border-radius: 10px; margin: 15px 0; font-size: 18px; text-align: center; font-family: 'Montserrat'; }
+        .save-btn { width: 100%; padding: 12px; background: #fff; color: #000; border: none; border-radius: 10px; font-weight: 700; cursor: pointer; }
+        .link-box { margin-top: 15px; font-size: 10px; color: #00ff88; background: #050505; padding: 10px; border-radius: 8px; word-break: break-all; border: 1px dashed #00ff88; }
+    </style>
+</head>
+<body>
+
+<button class="admin-btn" onclick="openModal()">⚙️ ЗАПИСАТЬ</button>
+
+<div id="modal">
+    <h3 style="margin:0">Новая метка</h3>
+    <input type="text" id="tagInput" placeholder="ID (8 цифр)" maxlength="8">
+    <button class="save-btn" onclick="saveTag()">СОЗДАТЬ ШАБЛОН</button>
+    <div id="result" class="link-box" style="display:none"></div>
+    <p onclick="closeModal()" style="font-size:11px; color:#444; margin-top:15px; cursor:pointer">Закрыть</p>
+</div>
+
+<button id="playBtn">PLAY</button>
+<div id="status">Загрузка системы...</div>
+
+<script>
+    const firebaseConfig = {
+        apiKey: "AIzaSyCXnhsPcqTKsZbHxU67KEmm8FwHA1LhpPo",
+        authDomain: "tagm-48ee0.firebaseapp.com",
+        databaseURL: "https://tagm-48ee0-default-rtdb.firebaseio.com",
+        projectId: "tagm-48ee0"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const database = firebase.database();
+
+    const params = new URLSearchParams(window.location.search);
+    const currentId = params.get('id');
+    const statusDiv = document.getElementById('status');
+
+    if (currentId) {
+        statusDiv.innerHTML = `Метка: <b>${currentId}</b><br>Нажмите PLAY для звука`;
+    } else {
+        statusDiv.innerHTML = `ID не обнаружен<br>Считайте NFC метку`;
+    }
+
+    document.getElementById('playBtn').onclick = () => {
+        if (!currentId) return alert("Нет ID!");
+        statusDiv.innerText = "⏳ Ищем звук...";
+        
+        database.ref('tags/' + currentId).once('value').then(snap => {
+            const val = snap.val();
+            if (val && val.soundUrl && val.soundUrl !== "placeholder") {
+                const audio = new Audio(val.soundUrl);
+                audio.play();
+                statusDiv.innerText = "🔊 Воспроизведение...";
+            } else {
+                statusDiv.innerHTML = "❌ <b>Звук не найден.</b><br>Настройте его в боте.";
+            }
+        });
+    };
+
+    function openModal() { document.getElementById('modal').style.display = 'block'; }
+    function closeModal() { document.getElementById('modal').style.display = 'none'; }
+
+    function saveTag() {
+        const id = document.getElementById('tagInput').value;
+        if (!/^\d{8}$/.test(id)) return alert("Нужно 8 цифр!");
+
+        database.ref('tags/' + id).set({
+            soundUrl: "placeholder",
+            date: new Date().toLocaleDateString()
+        }).then(() => {
+            const finalLink = window.location.origin + "/?id=" + id;
+            const resDiv = document.getElementById('result');
+            resDiv.style.display = 'block';
+            resDiv.innerHTML = `✅ Создано!<br>Записать в NFC:<br><b>${finalLink}</b>`;
+        });
+    }
+</script>
+</body>
+</html>
