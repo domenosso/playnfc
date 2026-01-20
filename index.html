@@ -1,3 +1,49 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NFC Sound System</title>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
+    
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+
+    <style>
+        body { margin: 0; background: #0a0a0a; color: #fff; font-family: 'Montserrat', sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; text-align: center; overflow: hidden; }
+        
+        .admin-btn { position: absolute; top: 20px; left: 20px; background: #1a1a1a; border: 1px solid #333; color: #888; padding: 10px 18px; border-radius: 30px; cursor: pointer; font-size: 12px; transition: 0.3s; z-index: 10; }
+        .admin-btn:hover { border-color: #ff4b2b; color: #fff; }
+
+        #playBtn { width: 230px; height: 230px; border-radius: 50%; border: none; background: linear-gradient(135deg, #ff4b2b 0%, #ff416c 100%); color: white; font-size: 26px; font-weight: 700; cursor: pointer; box-shadow: 0 15px 40px rgba(255, 75, 43, 0.4); transition: 0.2s; margin-bottom: 25px; outline: none; }
+        #playBtn:active { transform: scale(0.92); box-shadow: 0 5px 15px rgba(255, 75, 43, 0.2); }
+
+        #status { font-size: 14px; color: #666; line-height: 1.6; }
+        b { color: #ff4b2b; }
+
+        /* Modal Setup */
+        #modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #111; padding: 30px; border-radius: 25px; border: 1px solid #222; width: 290px; box-shadow: 0 0 100px rgba(0,0,0,0.8); z-index: 100; }
+        input { width: 100%; padding: 15px; box-sizing: border-box; background: #000; border: 1px solid #333; color: #fff; border-radius: 12px; margin: 20px 0; font-size: 20px; text-align: center; font-family: 'Montserrat'; outline: none; }
+        .save-btn { width: 100%; padding: 15px; background: #fff; color: #000; border: none; border-radius: 12px; font-weight: 700; cursor: pointer; transition: 0.2s; }
+        .save-btn:active { background: #ccc; }
+        .link-box { margin-top: 15px; font-size: 11px; color: #00ff88; background: #050505; padding: 12px; border-radius: 10px; word-break: break-all; border: 1px dashed #00ff88; }
+    </style>
+</head>
+<body>
+
+<button class="admin-btn" onclick="openModal()">⚙️ НАСТРОЙКА</button>
+
+<div id="modal">
+    <h3 style="margin:0">Новая метка</h3>
+    <input type="text" id="tagInput" placeholder="ID (8 цифр)" maxlength="8">
+    <button class="save-btn" onclick="saveTag()">СОЗДАТЬ ШАБЛОН</button>
+    <div id="result" class="link-box" style="display:none"></div>
+    <p onclick="closeModal()" style="font-size:12px; color:#555; margin-top:20px; cursor:pointer">Закрыть</p>
+</div>
+
+<button id="playBtn">PLAY</button>
+<div id="status">Инициализация...</div>
+
 <script>
     const firebaseConfig = {
         apiKey: "AIzaSyCXnhsPcqTKsZbHxU67KEmm8FwHA1LhpPo",
@@ -5,66 +51,72 @@
         databaseURL: "https://tagm-48ee0-default-rtdb.firebaseio.com",
         projectId: "tagm-48ee0"
     };
-    firebase.initializeApp(firebaseConfig);
-    const database = firebase.database();
 
-    const params = new URLSearchParams(window.location.search);
-    const currentId = params.get('id');
-    const statusDiv = document.getElementById('status');
-    
-    let preloadedAudio = null; // Переменная для хранения аудио в памяти
+    // Глобальные переменные
+    let preloadedAudio = null;
+    let database = null;
 
-    // --- ФУНКЦИЯ ПРЕДЗАГРУЗКИ (Запускается сразу) ---
-    if (currentId) {
-        statusDiv.innerHTML = `Метка: <b>${currentId}</b><br>Подготовка звука...`;
+    if (typeof firebase !== 'undefined') {
+        firebase.initializeApp(firebaseConfig);
+        database = firebase.database();
         
-        // Сразу лезем в базу, не дожидаясь клика
-        database.ref('tags/' + currentId).once('value').then(snap => {
-            const val = snap.val();
-            if (val && val.soundUrl && val.soundUrl !== "placeholder") {
-                // Создаем объект аудио и начинаем загрузку файла в фон
-                preloadedAudio = new Audio(val.soundUrl);
-                preloadedAudio.preload = "auto"; 
-                preloadedAudio.load(); // Принудительная загрузка в кэш
-                
-                statusDiv.innerHTML = `Метка: <b>${currentId}</b><br>🚀 ГОТОВ! Жми!`;
+        const params = new URLSearchParams(window.location.search);
+        const currentId = params.get('id');
+        const statusDiv = document.getElementById('status');
+
+        if (currentId) {
+            statusDiv.innerHTML = `Метка: <b>${currentId}</b><br>⏳ Загрузка звука...`;
+            
+            // МГНОВЕННАЯ ПРЕДЗАГРУЗКА
+            database.ref('tags/' + currentId).once('value').then(snap => {
+                const val = snap.val();
+                if (val && val.soundUrl && val.soundUrl !== "placeholder") {
+                    preloadedAudio = new Audio(val.soundUrl);
+                    preloadedAudio.preload = "auto";
+                    preloadedAudio.load(); // Начинаем качать сразу
+                    statusDiv.innerHTML = `Метка: <b>${currentId}</b><br>🚀 ГОТОВ К ВОСПРОИЗВЕДЕНИЮ`;
+                } else {
+                    statusDiv.innerHTML = `Метка: <b>${currentId}</b><br>🔇 Звук не привязан в боте`;
+                }
+            }).catch(() => {
+                statusDiv.innerText = "Ошибка подключения к базе";
+            });
+        } else {
+            statusDiv.innerHTML = `ID не обнаружен<br>Считайте NFC метку`;
+        }
+
+        // КЛИК ПО КНОПКЕ
+        document.getElementById('playBtn').onclick = () => {
+            if (preloadedAudio) {
+                preloadedAudio.currentTime = 0;
+                preloadedAudio.play();
+                statusDiv.innerHTML = "🔊 <b>ИГРАЕТ!</b>";
+            } else if (!currentId) {
+                alert("Ошибка: В ссылке нет ID (?id=12345678)");
             } else {
-                statusDiv.innerHTML = "❌ Звук не настроен в боте";
+                alert("Звук еще загружается или не настроен.");
             }
-        });
-    } else {
-        statusDiv.innerHTML = `ID не обнаружен<br>Считайте NFC метку`;
+        };
     }
 
-    // --- КЛИК (Теперь срабатывает мгновенно) ---
-    document.getElementById('playBtn').onclick = () => {
-        if (preloadedAudio) {
-            // Файл уже в памяти, воспроизведение начнется за миллисекунды
-            preloadedAudio.currentTime = 0; // Начать сначала, если нажали второй раз
-            preloadedAudio.play().catch(e => {
-                statusDiv.innerText = "Ошибка: нажми еще раз";
-            });
-            statusDiv.innerText = "🔊 ВОСПРОИЗВЕДЕНИЕ";
-        } else {
-            if (!currentId) return alert("Нет ID!");
-            statusDiv.innerText = "⏳ Файл еще грузится, подожди секунду...";
-        }
-    };
-
-    // Функции модалки (оставляем без изменений)
+    // Функции управления модальным окном
     function openModal() { document.getElementById('modal').style.display = 'block'; }
     function closeModal() { document.getElementById('modal').style.display = 'none'; }
+
     function saveTag() {
         const id = document.getElementById('tagInput').value;
-        if (!/^\d{8}$/.test(id)) return alert("Нужно 8 цифр!");
+        if (!/^\d{8}$/.test(id)) return alert("Введите ровно 8 цифр!");
+
         database.ref('tags/' + id).set({
             soundUrl: "placeholder",
-            date: new Date().toLocaleDateString()
+            createdAt: new Date().toISOString()
         }).then(() => {
             const finalLink = window.location.origin + "/?id=" + id;
             const resDiv = document.getElementById('result');
             resDiv.style.display = 'block';
-            resDiv.innerHTML = `✅ Создано!<br>Записать в NFC:<br><b>${finalLink}</b>`;
+            resDiv.innerHTML = `✅ Готово! Ссылка для NFC:<br><b>${finalLink}</b>`;
         });
     }
 </script>
+</body>
+</html>
